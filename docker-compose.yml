@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   mysql:
     image: mysql:8.0
@@ -16,11 +14,10 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    networks:
-      - stack
+    networks: [stack]
 
   phpmyadmin:
-    image: arm64v8/phpmyadmin
+    image: phpmyadmin/phpmyadmin:latest
     restart: unless-stopped
     environment:
       PMA_HOST: mysql
@@ -28,10 +25,9 @@ services:
       UPLOAD_LIMIT: 256M
     ports:
       - "${PHPMYADMIN_PORT:-8888}:80"
-    depends_on:
+    depends_on: 
       - mysql
-    networks:
-      - stack
+    networks: [stack]
 
   api:
     build: ./01_api
@@ -44,4 +40,30 @@ services:
       DB_NAME: ${MYSQL_DATABASE}
       DB_USER: ${MYSQL_USER}
       DB_PASSWORD: ${MYSQL_PASSWORD}
-      TZ: Asia/
+      TZ: Asia/Bangkok
+    ports:
+      - "${API_PORT:-3001}:3001"
+    depends_on: 
+      - mysql
+    networks: [stack]
+
+  frontend:
+    build:
+      context: ./02_frontend
+      args:
+        - API_HOST=${API_HOST:-http://localhost:3001}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      - api
+    networks: [stack]
+
+volumes:
+  mysql_data:
+
+networks:
+  stack:
+    driver: bridge

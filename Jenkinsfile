@@ -7,10 +7,18 @@ pipeline {
     }
 
     environment {
-        // Build Information
-        BUILD_TAG = "${env.BUILD_NUMBER}"
-        GIT_COMMIT_SHORT = sh(returnStdout: true, script: 'git rev-parse --short HEAD').trim()
+    MYSQL_ROOT_PASSWORD = "rootpassword"
+    MYSQL_DATABASE = "attractions_db"
+    MYSQL_USER = "attractions_user"
+    MYSQL_PASSWORD = "attractions_pass"
+    MYSQL_PORT = "3306"
+    PHPMYADMIN_PORT = "8888"
+    API_PORT = "3001"
+    DB_PORT = "3306"
+    FRONTEND_PORT = "3000"
+    API_HOST = "http://192.168.56.1:3001"
     }
+
 
     parameters {
         booleanParam(
