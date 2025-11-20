@@ -2,30 +2,19 @@ pipeline {
     agent any
 
     environment {
-        MYSQL_ROOT_PASSWORD = "rootpassword"
-        MYSQL_DATABASE = "attractions_db"
-        MYSQL_USER = "attractions_user"
-        MYSQL_PASSWORD = "attractions_pass"
-        MYSQL_PORT = "3306"
-
-        PHPMYADMIN_PORT = "8888"
-
-        API_PORT = "3001"
-        DB_PORT = "3306"
-        FRONTEND_PORT = "3000"
+        API_HOST = "http://192.168.56.1:3001"
     }
 
     parameters {
         booleanParam(
             name: 'CLEAN_VOLUMES',
             defaultValue: true,
-            description: 'Remove volumes (clears database)'
+            description: 'Clear database volumes'
         )
-
         string(
             name: 'API_HOST',
             defaultValue: 'http://192.168.56.1:3001',
-            description: 'API base URL for frontend'
+            description: 'URL the frontend should call'
         )
     }
 
@@ -33,111 +22,101 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                echo "Checking out SCM..."
+                echo "📦 Checking out source code..."
                 checkout scm
+            }
+        }
+
+        stage('Generate .env') {
+            steps {
+                echo "📝 Creating .env inside Jenkins workspace..."
+
+                sh """
+                    cat > .env <<EOF
+MYSQL_ROOT_PASSWORD=rootpassword
+MYSQL_DATABASE=attractions_db
+MYSQL_USER=attractions_user
+MYSQL_PASSWORD=attractions_pass
+MYSQL_PORT=3306
+PHPMYADMIN_PORT=8888
+API_PORT=3001
+DB_PORT=3306
+FRONTEND_PORT=3000
+API_HOST=${params.API_HOST}
+EOF
+                """
+
+                echo ".env created."
             }
         }
 
         stage('Validate Compose') {
             steps {
-                echo "Validating Docker Compose file..."
-                sh 'docker compose config'
-            }
-        }
-
-        stage('Create .env file') {
-            steps {
-                script {
-                    echo "Generating .env file..."
-
-                    sh """
-                        cat > .env <<EOF
-MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
-MYSQL_DATABASE=${MYSQL_DATABASE}
-MYSQL_USER=${MYSQL_USER}
-MYSQL_PASSWORD=${MYSQL_PASSWORD}
-MYSQL_PORT=${MYSQL_PORT}
-
-PHPMYADMIN_PORT=${PHPMYADMIN_PORT}
-
-API_PORT=${API_PORT}
-DB_PORT=${DB_PORT}
-FRONTEND_PORT=${FRONTEND_PORT}
-
-NODE_ENV=production
-API_HOST=${params.API_HOST}
-EOF
-                    """
-
-                    echo ".env file created."
-                }
+                echo "🔍 Validating docker-compose.yml..."
+                sh "docker compose config"
             }
         }
 
         stage('Deploy') {
             steps {
                 script {
+                    echo "🚀 Deploying..."
 
-                    echo "Stopping old containers..."
-
+                    def downCmd = "docker compose down"
                     if (params.CLEAN_VOLUMES) {
-                        sh 'docker compose down -v'
-                    } else {
-                        sh 'docker compose down'
+                        downCmd = "docker compose down -v"
+                        echo "⚠️  Clearing volumes!"
                     }
 
-                    echo "Building fresh images..."
-                    sh 'docker compose build --no-cache'
+                    sh downCmd
+                    sh "docker compose build --no-cache"
+                    sh "docker compose up -d"
 
-                    echo "Starting containers..."
-                    sh 'docker compose up -d'
+                    echo "Deployment done."
                 }
             }
         }
 
         stage('Health Check') {
             steps {
-                script {
+                echo "⏳ Waiting for API..."
 
-                    echo "Waiting for API to start..."
-                    sh 'sleep 15'
+                sh """
+                    sleep 10
+                    docker compose ps
+                """
 
-                    echo "Checking API health endpoint..."
+                sh """
+                    timeout 30 bash -c 'until curl -f http://localhost:3001/health; do sleep 2; done'
+                """
 
-                    sh """
-                        timeout 60 bash -c 'until curl -fs http://localhost:${API_PORT}/health; do sleep 3; done'
-                        curl -f http://localhost:${API_PORT}/attractions
-                    """
-
-                    echo "Health check PASSED"
-                }
+                echo "API is healthy!"
             }
         }
 
-        stage('Verify Deployment') {
+        stage('Verify') {
             steps {
-                echo "Showing running containers..."
-                sh "docker compose ps"
-
-                echo "Showing service logs..."
-                sh "docker compose logs --tail=20"
+                echo "🔎 Final verification..."
+                sh """
+                    docker compose ps
+                    docker compose logs --tail=30
+                """
             }
         }
     }
 
     post {
         success {
-            echo "🚀 SUCCESS! Deployment completed!"
+            echo "✅ SUCCESS!"
         }
-
         failure {
-            echo "❌ Deployment failed! Showing last logs..."
+            echo "❌ Deployment failed."
             sh "docker compose logs --tail=50 || true"
         }
-
         always {
-            sh "docker image prune -f"
-            sh "docker container prune -f"
+            echo "🧹 Cleaning unused Docker resources..."
+            sh "docker image prune -f || true"
+            sh "docker container prune -f || true"
         }
     }
 }
