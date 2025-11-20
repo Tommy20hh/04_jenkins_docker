@@ -79,20 +79,27 @@ EOF
 
         stage('Health Check') {
             steps {
-                echo "⏳ Waiting for API..."
+                script {
+                    echo "⏳ Waiting for API..."
 
-                sh """
-                    sleep 10
-                    docker compose ps
-                """
+                    sleep 60   // Wait longer for MySQL to fully initialize
 
-                sh """
-                    timeout 30 bash -c 'until curl -f http://localhost:3001/health; do sleep 2; done'
-                """
+                    sh 'docker compose ps'
 
-                echo "API is healthy!"
+                    sh """
+                        timeout 180 bash -c '
+                        until curl -f http://localhost:3001/health;
+                        do 
+                            echo "API not ready yet... waiting";
+                            sleep 3;
+                        done'
+                    """
+
+                    echo "✅ Health check passed!"
+                }
             }
         }
+
 
         stage('Verify') {
             steps {
